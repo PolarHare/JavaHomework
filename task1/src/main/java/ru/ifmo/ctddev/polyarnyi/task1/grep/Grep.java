@@ -99,9 +99,6 @@ public class Grep extends SimpleFileVisitor<Path> {
         }
 
         public boolean proceed(int nextByte) {
-            if (nextByte < 0) {
-                int x = 239;
-            }
             return ahoCorasick.processText(nextByte);
         }
 

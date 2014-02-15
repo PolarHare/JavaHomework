@@ -4,6 +4,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -22,7 +23,7 @@ public class AhoCorasickTest {
 
     @Test
     public void test1() throws Exception {
-        Grep.AhoCorasick search = new Grep.AhoCorasick(patterns, ' ', 255);
+        AhoCorasick search = new AhoCorasick(patterns, ' ', 255);
         int[] text = toInts("hers he his hers she hasdf");
         for (int i = 0; i < text.length; i++) {
             Assert.assertEquals("At index = " + i, isOneOfPatternEnd(text, i), search.processText(text[i]));
@@ -60,9 +61,7 @@ public class AhoCorasickTest {
 
     private static List<int[]> createArrayList(int[]... a) {
         List<int[]> result = new ArrayList<>(a.length);
-        for (int[] cur : a) {
-            result.add(cur);
-        }
+        Collections.addAll(result, a);
         return result;
     }
 

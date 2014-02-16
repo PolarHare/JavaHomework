@@ -21,7 +21,7 @@ public class Grep extends SimpleFileVisitor<Path> {
     private static final int MAX_SIZE_OF_MESSAGE = 128;
 
     public static void main(String[] args) {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in))) {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"))) {
             if (args.length == 0) {
                 System.out.println(USAGE);
             } else if (args.length == 1 && STRINGS_FROM_CONSOLE.equals(args[0])) {
@@ -55,8 +55,7 @@ public class Grep extends SimpleFileVisitor<Path> {
     @Override
     public FileVisitResult visitFile(Path file, BasicFileAttributes attr) throws IOException {
         searcher.reset();
-        try {
-            InputStream in = new BufferedInputStream(new FileInputStream(file.toFile()));
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file.toFile()))) {
             byte[] buffer = new byte[MAX_SIZE_OF_MESSAGE];
             int first = 0;
             int size = 0;

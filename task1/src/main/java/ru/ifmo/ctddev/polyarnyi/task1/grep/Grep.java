@@ -39,7 +39,7 @@ public class Grep extends SimpleFileVisitor<Path> {
     }
 
     private static void searchLinesContains(List<String> patterns, PrintStream out) throws IOException {
-        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("CP866", "KOI8-R", "CP1251", "UTF-8"));
+        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("CP866", "KOI8-R", "UTF-8", "CP1251"));
         Path curPath = Paths.get("");
         Files.walkFileTree(curPath, new Grep(searcher, out));
     }
@@ -87,7 +87,7 @@ public class Grep extends SimpleFileVisitor<Path> {
                     out.println(file.toString() + '(' + lineNumber + ')' + ": "
                             + (containsFirstSymbol ? "" : "...")
                             + new String(bytes, encodingOfFounded)
-                            + ((curByte == '\r' || curByte == '\n') ? "" : "..."));
+                            + ((curByte == '\r' || curByte == '\n' || curByte == -1) ? "" : "..."));
                 }
             }
             return FileVisitResult.CONTINUE;

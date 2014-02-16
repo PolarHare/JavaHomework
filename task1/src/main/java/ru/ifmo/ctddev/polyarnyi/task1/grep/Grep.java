@@ -39,7 +39,7 @@ public class Grep extends SimpleFileVisitor<Path> {
     }
 
     private static void searchLinesContains(List<String> patterns, PrintStream out) throws IOException {
-        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("CP866", "KOI8-R", "UTF-8", "CP1251"));
+        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("CP866", "KOI8-R", "CP1251", "UTF-8"));
         Path curPath = Paths.get("");
         Files.walkFileTree(curPath, new Grep(searcher, out));
     }
@@ -56,6 +56,8 @@ public class Grep extends SimpleFileVisitor<Path> {
     public FileVisitResult visitFile(Path file, BasicFileAttributes attr) throws IOException {
         searcher.reset();
         try (InputStream in = new BufferedInputStream(new FileInputStream(file.toFile()))) {
+            int lineNumber = 1;
+            boolean containsFirstSymbol = true;
             byte[] buffer = new byte[MAX_SIZE_OF_MESSAGE];
             int first = 0;
             int size = 0;
@@ -64,6 +66,8 @@ public class Grep extends SimpleFileVisitor<Path> {
                 if (curByte == '\n') {
                     first = 0;
                     size = 0;
+                    containsFirstSymbol = true;
+                    lineNumber++;
                 } else if (curByte != '\r') {
                     if (size < MAX_SIZE_OF_MESSAGE) {
                         size++;
@@ -71,16 +75,20 @@ public class Grep extends SimpleFileVisitor<Path> {
                     } else {
                         buffer[first] = (byte) curByte;
                         first = (first + 1) % MAX_SIZE_OF_MESSAGE;
+                        containsFirstSymbol = false;
                     }
                 }
                 String encodingOfFounded = searcher.proceed(curByte);
+                curByte = in.read();
                 if (encodingOfFounded != null) {
-                    byte[] bytes = new byte[MAX_SIZE_OF_MESSAGE];
+                    byte[] bytes = new byte[size];
                     System.arraycopy(buffer, first, bytes, 0, Math.min(size, MAX_SIZE_OF_MESSAGE - first));
                     System.arraycopy(buffer, 0, bytes, Math.min(size, MAX_SIZE_OF_MESSAGE - first), first);
-                    out.println(file.toString() + ": " + new String(bytes, encodingOfFounded));
+                    out.println(file.toString() + '(' + lineNumber + ')' + ": "
+                            + (containsFirstSymbol ? "" : "...")
+                            + new String(bytes, encodingOfFounded)
+                            + ((curByte == '\r' || curByte == '\n') ? "" : "..."));
                 }
-                curByte = in.read();
             }
             return FileVisitResult.CONTINUE;
         } catch (FileNotFoundException e) {

@@ -1,5 +1,8 @@
 package ru.ifmo.ctddev.polyarnyi.task1.grep;
 
+import com.google.common.base.Preconditions;
+
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -7,7 +10,7 @@ import java.util.List;
  *
  * @author Nickolay Polyarniy aka PolarNick
  */
-public class AhoCorasick {
+public class AhoCorasick<Data> {
 
     private final int minCharacter;
     private final int alphabetSize;
@@ -15,13 +18,14 @@ public class AhoCorasick {
 
     private Node current;
 
-    public AhoCorasick(List<int[]> patterns, int minCharacter, int maxCharacter) {
+    public AhoCorasick(List<int[]> patterns, List<Data> data, int minCharacter, int maxCharacter) {
+        Preconditions.checkArgument(patterns.size() == data.size(), "Data must be per pattern!");
         this.minCharacter = minCharacter;
         this.alphabetSize = maxCharacter - minCharacter + 1;
         this.root = new Node(-1, null);
 
-        for (int[] pattern : patterns) {
-            addPattern(pattern);
+        for (int i = 0; i < patterns.size(); i++) {
+            addPattern(patterns.get(i), data.get(i));
         }
         resetText();
     }
@@ -30,36 +34,40 @@ public class AhoCorasick {
         this.current = this.root;
     }
 
-    public boolean processText(int character) {
+    public Data processText(int character) {
         character -= minCharacter;
         Node cur = current.getGo(character);
-        boolean result = cur.isLeaf;
+        Data result = cur.dataAtThisPattern;
         current = cur;
         while (cur != root) {
             cur = cur.getUp();
-            result = result || cur.isLeaf;
+            if (result == null) {
+                result = cur.dataAtThisPattern;
+            }
         }
         return result;
     }
 
-    private void addPattern(int[] pattern) {
+    private void addPattern(int[] pattern, Data dataForPattern) {
         Node cur = root;
         for (int c : pattern) {
             c -= minCharacter;
-            if (cur.sons[c] == null) {
-                cur.sons[c] = new Node(c, cur);
+            if (cur.sons.get(c) == null) {
+                cur.sons.set(c, new Node(c, cur));
             }
-            cur = cur.sons[c];
+            cur = cur.sons.get(c);
         }
         cur.isLeaf = true;
+        cur.dataAtThisPattern = dataForPattern;
     }
 
     private class Node {
 
-        final Node[] sons = new Node[alphabetSize];
-        final Node[] go = new Node[alphabetSize];
+        final List<Node> sons = new ArrayList<>(alphabetSize);
+        final List<Node> go = new ArrayList<>(alphabetSize);
         Node suffixLink = null;
         Node up = null;
+        Data dataAtThisPattern = null;
         boolean isLeaf = false;
 
         Node parent;
@@ -68,6 +76,8 @@ public class AhoCorasick {
         private Node(int characterToParent, Node parent) {
             this.characterToParent = characterToParent;
             this.parent = parent;
+            while (sons.size() < alphabetSize) sons.add(null);
+            while (go.size() < alphabetSize) go.add(null);
         }
 
         private Node getSuffixLink() {
@@ -82,14 +92,14 @@ public class AhoCorasick {
         }
 
         private Node getGo(int c) {
-            if (go[c] == null) {
-                if (sons[c] != null) {
-                    go[c] = sons[c];
+            if (go.get(c) == null) {
+                if (sons.get(c) != null) {
+                    go.set(c, sons.get(c));
                 } else {
-                    go[c] = (this == root) ? root : getSuffixLink().getGo(c);
+                    go.set(c, (this == root) ? root : getSuffixLink().getGo(c));
                 }
             }
-            return go[c];
+            return go.get(c);
         }
 
         private Node getUp() {

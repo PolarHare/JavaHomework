@@ -18,6 +18,7 @@ public class Grep extends SimpleFileVisitor<Path> {
             "Or to enter strings one by one in console: \"java Grep -\"";
     private static final String STRINGS_FROM_CONSOLE = "-";
     private static final String ERROR_IO_EXCEPTION = "Input/Output error has occurred!";
+    private static final int MAX_SIZE_OF_MESSAGE = 128;
 
     public static void main(String[] args) {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in))) {
@@ -38,7 +39,7 @@ public class Grep extends SimpleFileVisitor<Path> {
     }
 
     private static void searchLinesContains(List<String> patterns, PrintStream out) throws IOException {
-        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("UTF-8", "KOI8-R", "CP1251", "CP866"));
+        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("CP866", "KOI8-R", "UTF-8", "CP1251"));
         Path curPath = Paths.get("");
         Files.walkFileTree(curPath, new Grep(searcher, out));
     }
@@ -55,17 +56,32 @@ public class Grep extends SimpleFileVisitor<Path> {
     public FileVisitResult visitFile(Path file, BasicFileAttributes attr) throws IOException {
         searcher.reset();
         try {
-            BufferedReader in = new BufferedReader(new FileReader(file.toFile()));
-            String str = in.readLine();
-            while (str != null) {
-                byte[] bytes = str.getBytes();
-                for (byte cur : bytes) {
-                    if (searcher.proceed(cur)) {
-                        out.println(file.toString() + ": " + str);
-                        break;
+            InputStream in = new BufferedInputStream(new FileInputStream(file.toFile()));
+            byte[] buffer = new byte[MAX_SIZE_OF_MESSAGE];
+            int first = 0;
+            int size = 0;
+            int curByte = in.read();
+            while (curByte != -1) {
+                if (curByte == '\n') {
+                    first = 0;
+                    size = 0;
+                } else if (curByte != '\r') {
+                    if (size < MAX_SIZE_OF_MESSAGE) {
+                        size++;
+                        buffer[size - 1] = (byte) curByte;
+                    } else {
+                        buffer[first] = (byte) curByte;
+                        first = (first + 1) % MAX_SIZE_OF_MESSAGE;
                     }
                 }
-                str = in.readLine();
+                String encodingOfFounded = searcher.proceed(curByte);
+                if (encodingOfFounded != null) {
+                    byte[] bytes = new byte[MAX_SIZE_OF_MESSAGE];
+                    System.arraycopy(buffer, first, bytes, 0, Math.min(size, MAX_SIZE_OF_MESSAGE - first));
+                    System.arraycopy(buffer, 0, bytes, Math.min(size, MAX_SIZE_OF_MESSAGE - first), first);
+                    out.println(file.toString() + ": " + new String(bytes, encodingOfFounded));
+                }
+                curByte = in.read();
             }
             return FileVisitResult.CONTINUE;
         } catch (FileNotFoundException e) {

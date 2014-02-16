@@ -12,10 +12,11 @@ import java.util.List;
 
 public class MultiEncodingSearch {
 
-    private final AhoCorasick ahoCorasick;
+    private final AhoCorasick<String> ahoCorasick;
 
     public MultiEncodingSearch(List<String> patterns, List<String> encodings) {
         List<int[]> patternsInAllEncodings = new ArrayList<>(patterns.size() * encodings.size());
+        List<String> patternEncodings = new ArrayList<>(patterns.size() * encodings.size());
         for (String pattern : patterns) {
             for (String encoding : encodings) {
                 byte[] bytes = pattern.getBytes(Charset.forName(encoding));
@@ -24,21 +25,22 @@ public class MultiEncodingSearch {
                     a[i] = toUnsignedByte(bytes[i]);
                 }
                 patternsInAllEncodings.add(a);
+                patternEncodings.add(encoding);
             }
         }
-        ahoCorasick = new AhoCorasick(patternsInAllEncodings, 0, 255);
+        ahoCorasick = new AhoCorasick<>(patternsInAllEncodings, patternEncodings, 0, 255);
     }
 
     public void reset() {
         ahoCorasick.resetText();
     }
 
-    public boolean proceed(byte nextByte) {
+    public String proceed(int nextByte) {
         return ahoCorasick.processText(toUnsignedByte(nextByte));
     }
 
-    private static int toUnsignedByte(byte aByte) {
-        return 128 + aByte;
+    private static int toUnsignedByte(int aByte) {
+        return (256 + aByte) % 256;
     }
 
 }

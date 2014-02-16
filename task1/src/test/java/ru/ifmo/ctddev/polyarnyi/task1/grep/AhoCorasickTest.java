@@ -23,10 +23,11 @@ public class AhoCorasickTest {
 
     @Test
     public void test1() throws Exception {
-        AhoCorasick search = new AhoCorasick(patterns, ' ', 255);
+        String encoding = "UTF-8";
+        AhoCorasick<String> search = new AhoCorasick<>(patterns, Collections.nCopies(patterns.size(), encoding), ' ', 255);
         int[] text = toInts("hers he his hers she hasdf");
         for (int i = 0; i < text.length; i++) {
-            Assert.assertEquals("At index = " + i, isOneOfPatternEnd(text, i), search.processText(text[i]));
+            Assert.assertEquals("At index = " + i, isOneOfPatternEnd(text, i) ? encoding : null, search.processText(text[i]));
         }
     }
 

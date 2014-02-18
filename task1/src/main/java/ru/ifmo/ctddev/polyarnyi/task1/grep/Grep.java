@@ -63,12 +63,13 @@ public class Grep extends SimpleFileVisitor<Path> {
             int size = 0;
             int curByte = in.read();
             while (curByte != -1) {
-                if (curByte == '\n') {
+                char oneByteChar = (char) curByte;
+                if (System.lineSeparator().indexOf(oneByteChar) == 0) {
                     first = 0;
                     size = 0;
                     containsFirstSymbol = true;
                     lineNumber++;
-                } else if (curByte != '\r') {
+                } else if (System.lineSeparator().indexOf(oneByteChar) == -1) {
                     if (size < MAX_SIZE_OF_MESSAGE) {
                         size++;
                         buffer[size - 1] = (byte) curByte;

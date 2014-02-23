@@ -20,6 +20,13 @@ public class Grep extends SimpleFileVisitor<Path> {
     private static final String ERROR_IO_EXCEPTION = "Input/Output error has occurred!";
     private static final int MAX_SIZE_OF_MESSAGE = 128;
 
+    private static final String CP866 = "CP866";
+    private static final String KOI8_R = "KOI8-R";
+    private static final String UTF_8 = "UTF-8";
+    private static final String CP1251 = "CP1251";
+
+    private static final int MAX_BYTES_PER_CHAR_IN_UTF_8 = 6;
+
     public static void main(String[] args) {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"))) {
             if (args.length == 0) {
@@ -39,7 +46,7 @@ public class Grep extends SimpleFileVisitor<Path> {
     }
 
     private static void searchLinesContains(List<String> patterns, PrintStream out) throws IOException {
-        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList("CP866", "KOI8-R", "UTF-8", "CP1251"));
+        MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList(CP866, KOI8_R, UTF_8, CP1251));
         Path curPath = Paths.get("");
         Files.walkFileTree(curPath, new Grep(searcher, out));
     }
@@ -71,8 +78,8 @@ public class Grep extends SimpleFileVisitor<Path> {
                     lineNumber++;
                 } else if (System.lineSeparator().indexOf(oneByteChar) == -1) {
                     if (size < MAX_SIZE_OF_MESSAGE) {
+                        buffer[(first + size) % MAX_SIZE_OF_MESSAGE] = (byte) curByte;
                         size++;
-                        buffer[size - 1] = (byte) curByte;
                     } else {
                         buffer[first] = (byte) curByte;
                         first = (first + 1) % MAX_SIZE_OF_MESSAGE;
@@ -82,9 +89,19 @@ public class Grep extends SimpleFileVisitor<Path> {
                 String encodingOfFounded = searcher.proceed(curByte);
                 curByte = in.read();
                 if (encodingOfFounded != null) {
+                    if (encodingOfFounded.equals(UTF_8)) {
+                        int bytesWereSkipped = 0;
+                        while (isNotAFirstByteInUTF8(buffer[first])
+                                && bytesWereSkipped < MAX_BYTES_PER_CHAR_IN_UTF_8 - 1 && size > MAX_SIZE_OF_MESSAGE / 2) {
+                            bytesWereSkipped++;
+                            first = (first + 1) % MAX_SIZE_OF_MESSAGE;
+                            size--;
+                        }
+                    }
                     byte[] bytes = new byte[size];
-                    System.arraycopy(buffer, first, bytes, 0, Math.min(size, MAX_SIZE_OF_MESSAGE - first));
-                    System.arraycopy(buffer, 0, bytes, Math.min(size, MAX_SIZE_OF_MESSAGE - first), first);
+                    int sizeOfSuffix = Math.min(size, MAX_SIZE_OF_MESSAGE - first);
+                    System.arraycopy(buffer, first, bytes, 0, sizeOfSuffix);
+                    System.arraycopy(buffer, 0, bytes, sizeOfSuffix, size - sizeOfSuffix);
                     out.println(file.toString() + '(' + lineNumber + ')' + ": "
                             + (containsFirstSymbol ? "" : "...")
                             + new String(bytes, encodingOfFounded)
@@ -95,6 +112,10 @@ public class Grep extends SimpleFileVisitor<Path> {
         } catch (FileNotFoundException e) {
             return FileVisitResult.CONTINUE;
         }
+    }
+
+    private static boolean isNotAFirstByteInUTF8(byte a) {
+        return (((256 + a) % 256) & 0xC0) == 0x80;
     }
 
 }

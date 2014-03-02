@@ -5,6 +5,7 @@ import com.google.common.collect.Lists;
 import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -18,7 +19,7 @@ public class Grep extends SimpleFileVisitor<Path> {
             "Or to enter strings one by one in console: \"java Grep -\"";
     private static final String STRINGS_FROM_CONSOLE = "-";
     private static final String ERROR_IO_EXCEPTION = "Input/Output error has occurred!";
-    private static final int MAX_SIZE_OF_MESSAGE = 128;
+    private static final int MAX_SIZE_OF_MESSAGE = 256;
 
     private static final String CP866 = "CP866";
     private static final String KOI8_R = "KOI8-R";
@@ -28,33 +29,37 @@ public class Grep extends SimpleFileVisitor<Path> {
     private static final int MAX_BYTES_PER_CHAR_IN_UTF_8 = 6;
 
     public static void main(String[] args) {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"))) {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in, UTF_8));
+             Writer out = new OutputStreamWriter(System.out, UTF_8)) {
             if (args.length == 0) {
                 System.out.println(USAGE);
             } else if (args.length == 1 && STRINGS_FROM_CONSOLE.equals(args[0])) {
+                List<String> inputStrings = new ArrayList<>();
                 String s = in.readLine();
                 while (s != null && !s.isEmpty()) {
-                    searchLinesContains(Lists.newArrayList(s), System.out);
+                    inputStrings.add(s);
                     s = in.readLine();
                 }
+                searchLinesContains(inputStrings, out);
             } else {
-                searchLinesContains(Lists.newArrayList(args), System.out);
+                searchLinesContains(Lists.newArrayList(args), out);
             }
         } catch (IOException e) {
+            System.out.println();
             System.out.println(ERROR_IO_EXCEPTION);
         }
     }
 
-    private static void searchLinesContains(List<String> patterns, PrintStream out) throws IOException {
+    private static void searchLinesContains(List<String> patterns, Writer out) throws IOException {
         MultiEncodingSearch searcher = new MultiEncodingSearch(patterns, Lists.newArrayList(CP866, KOI8_R, UTF_8, CP1251));
         Path curPath = Paths.get("");
         Files.walkFileTree(curPath, new Grep(searcher, out));
     }
 
     private final MultiEncodingSearch searcher;
-    private final PrintStream out;
+    private final Writer out;
 
-    public Grep(MultiEncodingSearch searcher, PrintStream out) {
+    public Grep(MultiEncodingSearch searcher, Writer out) {
         this.searcher = searcher;
         this.out = out;
     }
@@ -102,10 +107,12 @@ public class Grep extends SimpleFileVisitor<Path> {
                     int sizeOfSuffix = Math.min(size, MAX_SIZE_OF_MESSAGE - first);
                     System.arraycopy(buffer, first, bytes, 0, sizeOfSuffix);
                     System.arraycopy(buffer, 0, bytes, sizeOfSuffix, size - sizeOfSuffix);
-                    out.println(file.toString() + '(' + lineNumber + ')' + ": "
+                    out.write(file.toString() + '(' + lineNumber + ')' + ": "
                             + (containsFirstSymbol ? "" : "...")
                             + new String(bytes, encodingOfFounded)
-                            + ((curByte == '\r' || curByte == '\n' || curByte == -1) ? "" : "..."));
+                            + ((curByte == '\r' || curByte == '\n' || curByte == -1) ? "" : "...")
+                            + System.lineSeparator());
+                    out.flush();
                 }
             }
             return FileVisitResult.CONTINUE;

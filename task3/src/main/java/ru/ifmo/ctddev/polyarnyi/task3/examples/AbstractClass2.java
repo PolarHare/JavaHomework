@@ -9,6 +9,10 @@ import java.util.List;
  */
 public abstract class AbstractClass2<E extends List<E>> extends AbstractClass<E, E, E, Integer> {
 
+    private AbstractClass2() {
+        super(0, null);
+    }
+
     protected AbstractClass2(E[] a) {
         super(239, a);
     }

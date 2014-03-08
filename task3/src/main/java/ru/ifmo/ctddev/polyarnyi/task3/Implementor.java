@@ -55,6 +55,8 @@ public class Implementor {
     private static final String LF = "\n";
 
     private void generateImplementation(Class<?> clazz, String implClassName, Appendable out) throws IOException {
+        Map<String, Map<String, String>> genericNamesTranslation = new HashMap<>();
+        initGenericNamesTranslation(genericNamesTranslation, clazz);
         final String packageName = clazz.getPackage().getName();
         appendPackage(packageName, out);
         out.append(LF);
@@ -65,7 +67,7 @@ public class Implementor {
         }
         appendClassDeclaration(clazz, implClassName, out, importedClasses);
         appendConstructor(clazz, implClassName, out);
-        appendMethodsImplementations(clazz, out, importedClasses);
+        appendMethodsImplementations(clazz, out, importedClasses, genericNamesTranslation);
         out.append("}");
     }
 
@@ -80,7 +82,7 @@ public class Implementor {
     }
 
     private void appendClassDeclaration(Class<?> clazz, String implClassName, Appendable out, Map<String, Class<?>> importedClasses) throws IOException {
-        String genericParamsPrefix = generateGenericParamsPrefix(clazz.getTypeParameters(), importedClasses);
+        String genericParamsPrefix = generateGenericParamsPrefix(clazz.getTypeParameters(), importedClasses, null);
         out.append("public class ").append(implClassName).append(genericParamsPrefix).append(" ");
         if (clazz.isAnnotation() || clazz.isAnonymousClass() || clazz.isArray() || clazz.isEnum() || clazz.isLocalClass()
                 || clazz.isMemberClass() || clazz.isPrimitive() || clazz.isSynthetic()) {
@@ -94,24 +96,35 @@ public class Implementor {
         } else {
             out.append("extends ");
         }
-        String genericParamsSuffix = generateGenericParamsSuffix(clazz.getTypeParameters());
+        String genericParamsSuffix = generateGenericParamsSuffix(clazz.getTypeParameters(), null);
         out.append(getSimpleName(clazz, importedClasses)).append(genericParamsSuffix);
         out.append(" {" + LF);
     }
 
     private void appendConstructor(Class<?> clazz, String classImplName, Appendable out) throws IOException {
-        Constructor<?>[] constructors = clazz.getConstructors();
-        boolean defaultConstructorExists = (constructors.length == 0);
+        Constructor<?>[] constructors = clazz.getDeclaredConstructors();
+        boolean defaultConstructorExists = constructors.length == 0;
+        Constructor superConstructor = null;
         for (Constructor<?> constructor : constructors) {
-            if (constructor.getParameterTypes().length == 0) {
+            if (constructor.getParameterTypes().length == 0 && !Modifier.isPrivate(constructor.getModifiers())) {
                 defaultConstructorExists = true;
             }
         }
         if (!defaultConstructorExists) {
+            for (Constructor<?> constructor : constructors) {
+                if (!Modifier.isPrivate(constructor.getModifiers())) {
+                    superConstructor = constructor;
+                }
+            }
+        }
+        if (!defaultConstructorExists) {
+            if (superConstructor == null) {
+                throw new IllegalArgumentException("Superclass has no accessible constructor!");
+            }
             out.append(LF);
             out.append("    public ").append(classImplName).append("() {").append(LF);
             out.append("        super(");
-            Class<?>[] parameterTypes = constructors[0].getParameterTypes();
+            Class<?>[] parameterTypes = superConstructor.getParameterTypes();
             for (int i = 0; i < parameterTypes.length; i++) {
                 Class<?> parameter = parameterTypes[i];
                 out.append(getDefaultValueForClass(parameter));
@@ -125,7 +138,7 @@ public class Implementor {
         }
     }
 
-    private void appendMethodsImplementations(Class<?> clazz, Appendable out, Map<String, Class<?>> importedClasses) throws IOException {
+    private void appendMethodsImplementations(Class<?> clazz, Appendable out, Map<String, Class<?>> importedClasses, Map<String, Map<String, String>> genericNamesTranslation) throws IOException {
         for (Method method : getListOfMethodsToBeOverriden(clazz)) {
             out.append(LF);
             String modifier;
@@ -142,16 +155,16 @@ public class Implementor {
             }
             out.append(modifier);
 
-            String genericArgumentsPrefix = generateGenericParamsPrefix(method.getTypeParameters(), importedClasses);
+            String genericArgumentsPrefix = generateGenericParamsPrefix(method.getTypeParameters(), importedClasses, genericNamesTranslation);
             if (!genericArgumentsPrefix.isEmpty()) {
                 genericArgumentsPrefix += " ";
             }
-            out.append(genericArgumentsPrefix).append(toStringGenericTypedClass(method.getGenericReturnType(), importedClasses)).append(" ")
+            out.append(genericArgumentsPrefix).append(toStringGenericTypedClass(method.getGenericReturnType(), importedClasses, genericNamesTranslation)).append(" ")
                     .append(method.getName()).append("(");
 
             Type[] parameterTypes = method.getGenericParameterTypes();
             for (int i = 0; i < parameterTypes.length; i++) {
-                out.append(toStringGenericTypedClass(parameterTypes[i], importedClasses)).append(" arg").append(Integer.toString(i + 1));
+                out.append(toStringGenericTypedClass(parameterTypes[i], importedClasses, genericNamesTranslation)).append(" arg").append(Integer.toString(i + 1));
                 if (i != parameterTypes.length - 1) {
                     out.append(", ");
                 }
@@ -264,18 +277,30 @@ public class Implementor {
                 methodsSignatures.add(new MethodSignature(method));
             }
         }
-        for (Method method : clazz.getDeclaredMethods()) {
-            //Only for package local not static and not final methods
-            if (!Modifier.isProtected(method.getModifiers()) && !Modifier.isPublic(method.getModifiers()) && !Modifier.isPrivate(method.getModifiers())
-                    && !Modifier.isFinal(method.getModifiers()) && !Modifier.isStatic(method.getModifiers())) {
-                methodsSignatures.add(new MethodSignature(method));
-            }
-        }
+        addToSetAllOverridableMethodsFromParents(methodsSignatures, clazz, clazz.getPackage().getName());
         List<Method> methods = new ArrayList<>();
         for (MethodSignature methodSignature : methodsSignatures) {
             methods.add(methodSignature.method);
         }
         return methods;
+    }
+
+    private void addToSetAllOverridableMethodsFromParents(HashSet<MethodSignature> methodsSignatures, Class<?> clazz, String packageOfImpl) {
+        for (Method method : clazz.getDeclaredMethods()) {
+            //Only for package local not static and not final methods
+            if (!Modifier.isProtected(method.getModifiers()) && !Modifier.isPublic(method.getModifiers()) && !Modifier.isPrivate(method.getModifiers())
+                    && !Modifier.isFinal(method.getModifiers()) && !Modifier.isStatic(method.getModifiers())
+                    && clazz.getPackage().getName().equals(packageOfImpl)) {
+                methodsSignatures.add(new MethodSignature(method));
+            }
+        }
+        for (Class<?> parent : clazz.getInterfaces()) {
+            addToSetAllOverridableMethodsFromParents(methodsSignatures, parent, packageOfImpl);
+        }
+        Class<?> superclass = clazz.getSuperclass();
+        if (superclass != null) {
+            addToSetAllOverridableMethodsFromParents(methodsSignatures, superclass, packageOfImpl);
+        }
     }
 
     private Class<?> getArrayRootClass(Class<?> parameterType) {
@@ -311,13 +336,13 @@ public class Implementor {
         return classes;
     }
 
-    private String toStringGenericTypedClass(Type type, Map<String, Class<?>> importedClasses) {
+    private String toStringGenericTypedClass(Type type, Map<String, Class<?>> importedClasses, Map<String, Map<String, String>> genericNamesTranslation) {
         if (type instanceof ParameterizedType) {
             ParameterizedType parameterizedType = (ParameterizedType) type;
             String result = getSimpleName(((Class<?>) parameterizedType.getRawType()), importedClasses) + "<";
             Type[] args = parameterizedType.getActualTypeArguments();
             for (int i = 0; i < args.length; i++) {
-                result += toStringGenericTypedClass(args[i], importedClasses);
+                result += toStringGenericTypedClass(args[i], importedClasses, genericNamesTranslation);
                 if (i != args.length - 1) {
                     result += ", ";
                 } else {
@@ -326,9 +351,9 @@ public class Implementor {
             }
             return result;
         } else if (type instanceof TypeVariable) {
-            return getName(((TypeVariable) type));
+            return getName(((TypeVariable) type), genericNamesTranslation);
         } else if (type instanceof GenericArrayType) {
-            return toStringGenericTypedClass(((GenericArrayType) type).getGenericComponentType(), importedClasses) + "[]";
+            return toStringGenericTypedClass(((GenericArrayType) type).getGenericComponentType(), importedClasses, genericNamesTranslation) + "[]";
         } else if (type instanceof Class) {
             return getSimpleName(((Class) type), importedClasses);
         } else if (type instanceof WildcardType) {
@@ -338,18 +363,18 @@ public class Implementor {
         }
     }
 
-    private String generateGenericParamsPrefix(TypeVariable<?>[] genericArguments, Map<String, Class<?>> importedClasses) {
+    private String generateGenericParamsPrefix(TypeVariable<?>[] genericArguments, Map<String, Class<?>> importedClasses, Map<String, Map<String, String>> genericNamesTranslation) {
         String result = "";
         if (genericArguments.length != 0) {
             result = "<";
             for (int i = 0; i < genericArguments.length; i++) {
                 TypeVariable<?> arg = genericArguments[i];
-                result += getName(arg);
+                result += getName(arg, null);
                 Type[] bounds = arg.getBounds();
                 if (bounds.length > 0 && !bounds[0].equals(Object.class)) {
                     result += " extends ";
                     for (int j = 0; j < bounds.length; j++) {
-                        result += toStringGenericTypedClass(bounds[j], importedClasses);
+                        result += toStringGenericTypedClass(bounds[j], importedClasses, genericNamesTranslation);
                         if (j != bounds.length - 1) {
                             result += " & ";
                         }
@@ -365,13 +390,13 @@ public class Implementor {
         return result;
     }
 
-    private String generateGenericParamsSuffix(TypeVariable<?>[] genericArguments) {
+    private String generateGenericParamsSuffix(TypeVariable<?>[] genericArguments, Map<String, Map<String, String>> genericNamesTranslation) {
         String result = "";
         if (genericArguments.length != 0) {
             result = "<";
             for (int i = 0; i < genericArguments.length; i++) {
                 TypeVariable<?> arg = genericArguments[i];
-                result += getName(arg);
+                result += getName(arg, genericNamesTranslation);
                 if (i != genericArguments.length - 1) {
                     result += ", ";
                 } else {
@@ -391,8 +416,89 @@ public class Implementor {
         }
     }
 
-    private String getName(TypeVariable<?> arg) {
-        return arg.getName(); //TODO: use translations!
+    private String getName(TypeVariable<?> type, Map<String, Map<String, String>> genericNamesTranslation) {
+        if (genericNamesTranslation == null) {
+            return type.getName();
+        }
+        Class<?> classOfDeclaration;
+        if (type.getGenericDeclaration() instanceof Method) {
+            classOfDeclaration = ((Method) type.getGenericDeclaration()).getDeclaringClass();
+        } else if (type.getGenericDeclaration() instanceof Class<?>) {
+            classOfDeclaration = ((Class) type.getGenericDeclaration());
+        } else {
+            throw new IllegalStateException();
+        }
+        String name = genericNamesTranslation.get(classOfDeclaration.getCanonicalName()).get(type.getName());
+        if (name == null) {
+            return type.getName();
+        } else {
+            return name;
+        }
+    }
+
+    private void initGenericNamesTranslation(Map<String, Map<String, String>> genericNamesTranslation, Class<?> realClass) {
+        Map<String, String> passedParams = new HashMap<>();
+        for (TypeVariable<?> variable : realClass.getTypeParameters()) {
+            passedParams.put(variable.getName(), variable.getName());
+        }
+        initGenericNamesTranslation(passedParams, genericNamesTranslation, realClass);
+    }
+
+    private void initGenericNamesTranslation(Map<String, String> passedParams,
+                                             Map<String, Map<String, String>> genericNamesTranslation, Class<?> clazz) {
+        Map<String, String> realNameByCurName = new HashMap<>();
+        for (TypeVariable<?> variable : clazz.getTypeParameters()) {
+            String realValue = passedParams.get(variable.getName());
+            realNameByCurName.put(variable.getName(), realValue);
+        }
+        genericNamesTranslation.put(clazz.getCanonicalName(), realNameByCurName);
+
+        for (Type type : clazz.getGenericInterfaces()) {
+            parseClassParent(type, genericNamesTranslation, clazz);
+        }
+        parseClassParent(clazz.getGenericSuperclass(), genericNamesTranslation, clazz);
+    }
+
+    private void parseClassParent(Type parent,
+                                  Map<String, Map<String, String>> genericNamesTranslation, Class<?> clazz) {
+        if (parent instanceof ParameterizedType) {
+            Map<String, String> parentArguments = new HashMap<>();
+            ParameterizedType parameterizedParent = (ParameterizedType) parent;
+            Class<?> parentClass = (Class<?>) parameterizedParent.getRawType();
+            Type[] actualTypeArguments = parameterizedParent.getActualTypeArguments();
+            for (int i = 0; i < actualTypeArguments.length; i++) {
+                parentArguments.put(parentClass.getTypeParameters()[i].getName(), toString(actualTypeArguments[i], genericNamesTranslation, clazz));
+            }
+            initGenericNamesTranslation(parentArguments, genericNamesTranslation, parentClass);
+        } else if (!(parent instanceof Class<?>) && parent != null) {
+            throw new IllegalStateException();
+        }
+    }
+
+    private String toString(Type type, Map<String, Map<String, String>> genericNamesTranslation, Class<?> clazz) {
+        if (type instanceof GenericArrayType) {
+            return toString(((GenericArrayType) type).getGenericComponentType(), genericNamesTranslation, clazz) + "[]";
+        } else if (type instanceof ParameterizedType) {
+            String result = ((Class<?>) ((ParameterizedType) type).getRawType()).getCanonicalName();
+            result += "<";
+            Type[] actualTypeArguments = ((ParameterizedType) type).getActualTypeArguments();
+            for (int i = 0; i < actualTypeArguments.length; i++) {
+                Type arg = actualTypeArguments[i];
+                result += toString(arg, genericNamesTranslation, clazz);
+                if (i != actualTypeArguments.length - 1) {
+                    result += ", ";
+                } else {
+                    result += ">";
+                }
+            }
+            return result;
+        } else if (type instanceof TypeVariable) {
+            return genericNamesTranslation.get(clazz.getCanonicalName()).get(((TypeVariable) type).getName());
+        } else if (type instanceof Class<?>) {
+            return ((Class) type).getCanonicalName();
+        } else {
+            throw new IllegalStateException();
+        }
     }
 
 }

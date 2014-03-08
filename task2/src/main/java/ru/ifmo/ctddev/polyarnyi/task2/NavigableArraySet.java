@@ -292,4 +292,22 @@ public class NavigableArraySet<E> implements NavigableSet<E> {
     public E last() {
         return array.get(array.size() - 1);
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        NavigableArraySet that = (NavigableArraySet) o;
+
+        if (array != null ? !array.equals(that.array) : that.array != null) return false;
+        if (comparator != null ? !comparator.equals(that.comparator) : that.comparator != null) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        return 0;
+    }
 }

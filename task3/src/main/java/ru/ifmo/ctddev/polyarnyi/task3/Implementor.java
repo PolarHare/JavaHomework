@@ -66,7 +66,7 @@ public class Implementor {
             out.append(LF);
         }
         appendClassDeclaration(clazz, implClassName, out, importedClasses, genericNamesTranslation);
-        appendConstructor(clazz, implClassName, out);
+        appendConstructor(clazz, implClassName, out, importedClasses, genericNamesTranslation);
         appendMethodsImplementations(clazz, out, importedClasses, genericNamesTranslation);
         out.append("}");
     }
@@ -106,28 +106,36 @@ public class Implementor {
         out.append(" {" + LF);
     }
 
-    private void appendConstructor(Class<?> clazz, String classImplName, Appendable out) throws IOException {
+    private void appendConstructor(Class<?> clazz, String classImplName, Appendable out, Map<String,
+            Class<?>> importedClasses, Map<String, Map<String, String>> genericNamesTranslation) throws IOException {
         Constructor<?>[] constructors = clazz.getDeclaredConstructors();
         boolean defaultConstructorExists = constructors.length == 0;
-        Constructor superConstructor = null;
         for (Constructor<?> constructor : constructors) {
             if (constructor.getParameterTypes().length == 0 && !Modifier.isPrivate(constructor.getModifiers())) {
                 defaultConstructorExists = true;
             }
         }
         if (!defaultConstructorExists) {
-            for (Constructor<?> constructor : constructors) {
-                if (!Modifier.isPrivate(constructor.getModifiers())) {
-                    superConstructor = constructor;
-                }
-            }
-        }
-        if (!defaultConstructorExists) {
+            Constructor<?> superConstructor = getSuperConstructorToUse(clazz);
             if (superConstructor == null) {
                 throw new IllegalArgumentException("Superclass has no accessible constructor!");
             }
             out.append(LF);
-            out.append("    public ").append(classImplName).append("() {").append(LF);
+            out.append("    public ").append(classImplName).append("() ");
+            Type[] genericExceptions = superConstructor.getGenericExceptionTypes();
+            if (genericExceptions.length != 0) {
+                out.append("throws ");
+                for (int i = 0; i < genericExceptions.length; i++) {
+                    Type type = genericExceptions[i];
+                    out.append(toStringGenericTypedClass(type, importedClasses, genericNamesTranslation, new HashSet<String>()));
+                    if (i != genericExceptions.length - 1) {
+                        out.append(", ");
+                    } else {
+                        out.append(" ");
+                    }
+                }
+            }
+            out.append("{").append(LF);
             out.append("        super(");
             Class<?>[] parameterTypes = superConstructor.getParameterTypes();
             for (int i = 0; i < parameterTypes.length; i++) {
@@ -141,6 +149,24 @@ public class Implementor {
             }
             out.append("    }").append(LF);
         }
+    }
+
+    private Constructor<?> getSuperConstructorToUse(Class<?> clazz) {
+        Constructor<?>[] constructors = clazz.getDeclaredConstructors();
+        boolean defaultConstructorExists = constructors.length == 0;
+        for (Constructor<?> constructor : constructors) {
+            if (constructor.getParameterTypes().length == 0 && !Modifier.isPrivate(constructor.getModifiers())) {
+                defaultConstructorExists = true;
+            }
+        }
+        if (!defaultConstructorExists) {
+            for (Constructor<?> constructor : constructors) {
+                if (!Modifier.isPrivate(constructor.getModifiers())) {
+                    return constructor;
+                }
+            }
+        }
+        return null;
     }
 
     private void appendMethodsImplementations(Class<?> clazz, Appendable out, Map<String, Class<?>> importedClasses, Map<String, Map<String, String>> genericNamesTranslation) throws IOException {
@@ -200,6 +226,12 @@ public class Implementor {
 
     private Map<String, Class<?>> findUsedClassesFromAnotherPackage(Class<?> rootClass) {
         Map<String, Class<?>> classes = new HashMap<>();
+        Constructor<?> superConstructor = getSuperConstructorToUse(rootClass);
+        if (superConstructor != null) {
+            for (Type exceptionType : superConstructor.getGenericExceptionTypes()) {
+                addUsedClassesFromAnotherPackage(classes, findUsedClasses(exceptionType, rootClass), rootClass);
+            }
+        }
         for (Method method : getListOfMethodsToBeOverriden(rootClass)) {
             for (TypeVariable type : method.getTypeParameters()) {
                 for (Type bound : type.getBounds()) {
@@ -346,13 +378,13 @@ public class Implementor {
     }
 
     private String toStringGenericTypedClass(Type type, Map<String, Class<?>> importedClasses, Map<String, Map<String, String>> genericNamesTranslation,
-                                             Set<String> methodGenericParams) {
+                                             Set<String> exclusionNames) {
         if (type instanceof ParameterizedType) {
             ParameterizedType parameterizedType = (ParameterizedType) type;
             String result = getSimpleName(((Class<?>) parameterizedType.getRawType()), importedClasses) + "<";
             Type[] args = parameterizedType.getActualTypeArguments();
             for (int i = 0; i < args.length; i++) {
-                result += toStringGenericTypedClass(args[i], importedClasses, genericNamesTranslation, methodGenericParams);
+                result += toStringGenericTypedClass(args[i], importedClasses, genericNamesTranslation, exclusionNames);
                 if (i != args.length - 1) {
                     result += ", ";
                 } else {
@@ -361,9 +393,9 @@ public class Implementor {
             }
             return result;
         } else if (type instanceof TypeVariable) {
-            return getName(((TypeVariable) type), genericNamesTranslation, methodGenericParams);
+            return getName(((TypeVariable) type), genericNamesTranslation, exclusionNames);
         } else if (type instanceof GenericArrayType) {
-            return toStringGenericTypedClass(((GenericArrayType) type).getGenericComponentType(), importedClasses, genericNamesTranslation, methodGenericParams) + "[]";
+            return toStringGenericTypedClass(((GenericArrayType) type).getGenericComponentType(), importedClasses, genericNamesTranslation, exclusionNames) + "[]";
         } else if (type instanceof Class) {
             return getSimpleName(((Class) type), importedClasses);
         } else if (type instanceof WildcardType) {
@@ -420,8 +452,8 @@ public class Implementor {
     }
 
     private String getSimpleName(Class<?> clazz, Map<String, Class<?>> importedClasses) {
-        if (importedClasses.containsKey(clazz.getSimpleName())
-                && !importedClasses.get(clazz.getSimpleName()).equals(clazz)) {
+        if (!importedClasses.containsKey(clazz.getSimpleName())
+                || !importedClasses.get(clazz.getSimpleName()).equals(clazz)) {
             return clazz.getCanonicalName();
         } else {
             return clazz.getSimpleName();
@@ -430,7 +462,7 @@ public class Implementor {
 
     private String getName(TypeVariable<?> type, Map<String, Map<String, String>> genericNamesTranslation,
                            Set<String> exclusionNames) {
-        if (exclusionNames.contains(type.getName())) {
+        if (exclusionNames != null && exclusionNames.contains(type.getName())) {
             return type.getName();
         }
         Class<?> classOfDeclaration;
@@ -441,8 +473,7 @@ public class Implementor {
         } else {
             throw new IllegalStateException();
         }
-        String name = genericNamesTranslation.get(classOfDeclaration.getCanonicalName()).get(type.getName());
-        return name;
+        return genericNamesTranslation.get(classOfDeclaration.getCanonicalName()).get(type.getName());
     }
 
     private void initGenericNamesTranslation(Map<String, Map<String, String>> genericNamesTranslation, Class<?> realClass) {

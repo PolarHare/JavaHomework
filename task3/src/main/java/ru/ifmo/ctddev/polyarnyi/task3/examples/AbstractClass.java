@@ -1,5 +1,7 @@
 package ru.ifmo.ctddev.polyarnyi.task3.examples;
 
+import java.io.UnsupportedEncodingException;
+import java.nio.file.AccessDeniedException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -10,9 +12,9 @@ import java.util.Set;
  *
  * @author Nickolay Polyarniy aka PolarNick
  */
-public abstract class AbstractClass <E, B extends List<C>, C, D> implements List<E> {
+public abstract class AbstractClass<E, B extends List<C>, C, D> implements List<E> {
 
-    public AbstractClass(int value, E[] array) {
+    public AbstractClass(int value, E[] array) throws AccessDeniedException, UnsupportedEncodingException {
     }
 
     public abstract D getD();
@@ -24,6 +26,7 @@ public abstract class AbstractClass <E, B extends List<C>, C, D> implements List
     public abstract <D> D getABC();
 
     public abstract int getInt(java.awt.List a);
+
     abstract Object getA();
 
     @Override

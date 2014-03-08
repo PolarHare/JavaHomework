@@ -1,5 +1,7 @@
 package ru.ifmo.ctddev.polyarnyi.task3.examples;
 
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.List;
 
 /**
@@ -9,11 +11,11 @@ import java.util.List;
  */
 public abstract class AbstractClass2<E extends List<E>> extends AbstractClass<E, E, E, Integer> {
 
-    private AbstractClass2() {
+    private AbstractClass2() throws IOException {
         super(0, null);
     }
 
-    protected AbstractClass2(E[] a) {
+    protected AbstractClass2(E[] a) throws IOException {
         super(239, a);
     }
 

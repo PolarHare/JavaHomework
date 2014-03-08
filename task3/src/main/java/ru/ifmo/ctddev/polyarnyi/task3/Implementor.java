@@ -3,13 +3,8 @@ package ru.ifmo.ctddev.polyarnyi.task3;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.lang.reflect.*;
+import java.util.*;
 
 /**
  * Date: 08.03.14 at 13:27
@@ -18,24 +13,27 @@ import java.util.Set;
  */
 public class Implementor {
 
-    private static final String USAGE = "Proper Usage is: \"java Implementor [className] [className]*\"\n" +
-            "Where [className] - is a full path to class ot interface to be mocked.";
+    private static final String USAGE = "Proper Usage is: \"java Implementor [pathToSrcRoot] [className] [className]*\"\n" +
+            "Where [pathToSrcRoot] - path to root of all packages for generated java sources." +
+            "Where [className] - is a full path to class ot interface to be mocked.\n";
     private static final String ERROR_CLASS_NOT_FOUND_PREFIX = "Class \"";
     private static final String ERROR_CLASS_NOT_FOUND_SUFFIX = "\" not found!";
     private static final String ERROR_IO_EXCEPTION = "Input/Output error has occurred!";
     private static final String CLASS_IMPLEMENTATION_NAME_SUFFIX = "Impl";
 
     public static void main(String[] args) {
-        if (args.length == 0) {
+        if (args.length <= 1) {
             System.out.println(USAGE);
             return;
         }
-        for (String className : args) {
+        String pathToSrcRoot = args[0];
+        for (int i = 1; i < args.length; i++) {
+            String className = args[i];
             System.out.println("Generating implementation for " + className + "...");
             try {
                 Class<?> clazz = Class.forName(className);
                 Implementor implementor = new Implementor();
-                String fileName = "task3/src/main/java/" + clazz.getPackage().getName().replace(".", "/")
+                String fileName = pathToSrcRoot + clazz.getPackage().getName().replace(".", "/")
                         + (clazz.getPackage().getName().isEmpty() ? "" : "/")
                         + clazz.getSimpleName() + CLASS_IMPLEMENTATION_NAME_SUFFIX + ".java";
                 File newFile = new File(fileName);
@@ -60,14 +58,14 @@ public class Implementor {
         final String packageName = clazz.getPackage().getName();
         appendPackage(packageName, out);
         out.append(LF);
-        Set<Class<?>> usedClasses = findUsedClasses(clazz);
-        if (!usedClasses.isEmpty()) {
-            appendImports(usedClasses, out);
+        Map<String, Class<?>> importedClasses = findUsedClassesFromAnotherPackage(clazz);
+        if (!importedClasses.values().isEmpty()) {
+            appendImports(importedClasses.values(), out);
             out.append(LF);
         }
-        appendClassDeclaration(clazz, implClassName, out);
+        appendClassDeclaration(clazz, implClassName, out, importedClasses);
         appendConstructor(clazz, implClassName, out);
-        appendMethodsImplementations(clazz, out);
+        appendMethodsImplementations(clazz, out, importedClasses);
         out.append("}");
     }
 
@@ -75,14 +73,15 @@ public class Implementor {
         out.append("package ").append(packageName).append(";").append(LF);
     }
 
-    private void appendImports(Set<Class<?>> classes, Appendable out) throws IOException {
+    private void appendImports(Collection<Class<?>> classes, Appendable out) throws IOException {
         for (Class clazz : classes) {
             out.append("import ").append(clazz.getCanonicalName()).append(";").append(LF);
         }
     }
 
-    private void appendClassDeclaration(Class<?> clazz, String implClassName, Appendable out) throws IOException {
-        out.append("public class ").append(implClassName).append(" ");
+    private void appendClassDeclaration(Class<?> clazz, String implClassName, Appendable out, Map<String, Class<?>> importedClasses) throws IOException {
+        String genericParamsPrefix = generateGenericParamsPrefix(clazz.getTypeParameters(), importedClasses);
+        out.append("public class ").append(implClassName).append(genericParamsPrefix).append(" ");
         if (clazz.isAnnotation() || clazz.isAnonymousClass() || clazz.isArray() || clazz.isEnum() || clazz.isLocalClass()
                 || clazz.isMemberClass() || clazz.isPrimitive() || clazz.isSynthetic()) {
             throw new IllegalArgumentException();
@@ -91,10 +90,12 @@ public class Implementor {
         }
 
         if (clazz.isInterface()) {
-            out.append("implements ").append(clazz.getSimpleName());
+            out.append("implements ");
         } else {
-            out.append("extends ").append(clazz.getSimpleName());
+            out.append("extends ");
         }
+        String genericParamsSuffix = generateGenericParamsSuffix(clazz.getTypeParameters());
+        out.append(getSimpleName(clazz, importedClasses)).append(genericParamsSuffix);
         out.append(" {" + LF);
     }
 
@@ -124,7 +125,7 @@ public class Implementor {
         }
     }
 
-    private void appendMethodsImplementations(Class<?> clazz, Appendable out) throws IOException {
+    private void appendMethodsImplementations(Class<?> clazz, Appendable out, Map<String, Class<?>> importedClasses) throws IOException {
         for (Method method : getListOfMethodsToBeOverriden(clazz)) {
             out.append(LF);
             String modifier;
@@ -139,14 +140,18 @@ public class Implementor {
             } else {
                 throw new IllegalArgumentException();
             }
-            out.append(modifier)
-                    .append(method.getReturnType().getSimpleName()).append(" ")
+            out.append(modifier);
+
+            String genericArgumentsPrefix = generateGenericParamsPrefix(method.getTypeParameters(), importedClasses);
+            if (!genericArgumentsPrefix.isEmpty()) {
+                genericArgumentsPrefix += " ";
+            }
+            out.append(genericArgumentsPrefix).append(toStringGenericTypedClass(method.getGenericReturnType(), importedClasses)).append(" ")
                     .append(method.getName()).append("(");
 
-            Class<?>[] parameterTypes = method.getParameterTypes();
+            Type[] parameterTypes = method.getGenericParameterTypes();
             for (int i = 0; i < parameterTypes.length; i++) {
-                Class<?> paramType = parameterTypes[i];
-                out.append(paramType.getSimpleName()).append(" arg").append(Integer.toString(i + 1));
+                out.append(toStringGenericTypedClass(parameterTypes[i], importedClasses)).append(" arg").append(Integer.toString(i + 1));
                 if (i != parameterTypes.length - 1) {
                     out.append(", ");
                 }
@@ -171,24 +176,35 @@ public class Implementor {
         }
     }
 
-    private Set<Class<?>> findUsedClasses(Class<?> clazz) {
-        Set<Class<?>> classes = new HashSet<>();
-        for (Method method : getListOfMethodsToBeOverriden(clazz)) {
-            for (Class<?> parameterType : method.getParameterTypes()) {
-                addUsedClasses(classes, parameterType, clazz);
+    private Map<String, Class<?>> findUsedClassesFromAnotherPackage(Class<?> rootClass) {
+        Map<String, Class<?>> classes = new HashMap<>();
+        for (Method method : getListOfMethodsToBeOverriden(rootClass)) {
+            for (TypeVariable type : method.getTypeParameters()) {
+                for (Type bound : type.getBounds()) {
+                    addUsedClassesFromAnotherPackage(classes, findUsedClasses(bound, rootClass), rootClass);
+                }
             }
-            addUsedClasses(classes, method.getReturnType(), clazz);
+            for (Type type : method.getGenericParameterTypes()) {
+                addUsedClassesFromAnotherPackage(classes, findUsedClasses(type, rootClass), rootClass);
+            }
+            addUsedClassesFromAnotherPackage(classes, findUsedClasses(method.getGenericReturnType(), rootClass), rootClass);
         }
         return classes;
     }
 
-    private void addUsedClasses(Set<Class<?>> setOfUsedClasses, Class<?> candidate, Class<?> rootClass) {
+    private void addUsedClassesFromAnotherPackage(Map<String, Class<?>> setOfUsedClasses, Map<String, Class<?>> candidates, Class<?> rootClass) {
+        for (Class<?> candidate : candidates.values()) {
+            addUsedClassFromAnotherPackage(setOfUsedClasses, candidate, rootClass);
+        }
+    }
+
+    private void addUsedClassFromAnotherPackage(Map<String, Class<?>> setOfUsedClasses, Class<?> candidate, Class<?> rootClass) {
         if (candidate.isArray()) {
-            setOfUsedClasses.add(getArrayRootClass(candidate));
+            setOfUsedClasses.put(candidate.getSimpleName(), getArrayRootClass(candidate));
         } else if (!candidate.isPrimitive()
                 && !candidate.getPackage().getName().startsWith("java.lang")
                 && !candidate.getPackage().getName().equals(rootClass.getPackage().getName())) {
-            setOfUsedClasses.add(candidate);
+            setOfUsedClasses.put(candidate.getSimpleName(), candidate);
         }
     }
 
@@ -271,6 +287,112 @@ public class Implementor {
         } else {
             return parameterType.getComponentType();
         }
+    }
+
+    private Map<String, Class<?>> findUsedClasses(Type type, Class<?> rootClass) {
+        Map<String, Class<?>> classes = new HashMap<>();
+        if (type instanceof ParameterizedType) {
+            ParameterizedType parameterizedType = (ParameterizedType) type;
+            Class<?> clazz = (Class<?>) ((ParameterizedType) type).getRawType();
+            addUsedClassFromAnotherPackage(classes, clazz, rootClass);
+            Type[] args = parameterizedType.getActualTypeArguments();
+            for (Type arg : args) {
+                addUsedClassesFromAnotherPackage(classes, findUsedClasses(arg, rootClass), rootClass);
+            }
+        } else if (type instanceof GenericArrayType) {
+            addUsedClassesFromAnotherPackage(classes,
+                    findUsedClasses(((GenericArrayType) type).getGenericComponentType(), rootClass), rootClass);
+        } else if (type instanceof Class) {
+            addUsedClassFromAnotherPackage(classes, (Class<?>) type, rootClass);
+        } else if (!(type instanceof WildcardType)
+                && !(type instanceof TypeVariable)) {
+            throw new IllegalStateException();
+        }
+        return classes;
+    }
+
+    private String toStringGenericTypedClass(Type type, Map<String, Class<?>> importedClasses) {
+        if (type instanceof ParameterizedType) {
+            ParameterizedType parameterizedType = (ParameterizedType) type;
+            String result = getSimpleName(((Class<?>) parameterizedType.getRawType()), importedClasses) + "<";
+            Type[] args = parameterizedType.getActualTypeArguments();
+            for (int i = 0; i < args.length; i++) {
+                result += toStringGenericTypedClass(args[i], importedClasses);
+                if (i != args.length - 1) {
+                    result += ", ";
+                } else {
+                    result += ">";
+                }
+            }
+            return result;
+        } else if (type instanceof TypeVariable) {
+            return getName(((TypeVariable) type));
+        } else if (type instanceof GenericArrayType) {
+            return toStringGenericTypedClass(((GenericArrayType) type).getGenericComponentType(), importedClasses) + "[]";
+        } else if (type instanceof Class) {
+            return getSimpleName(((Class) type), importedClasses);
+        } else if (type instanceof WildcardType) {
+            return type.toString();
+        } else {
+            throw new IllegalStateException();
+        }
+    }
+
+    private String generateGenericParamsPrefix(TypeVariable<?>[] genericArguments, Map<String, Class<?>> importedClasses) {
+        String result = "";
+        if (genericArguments.length != 0) {
+            result = "<";
+            for (int i = 0; i < genericArguments.length; i++) {
+                TypeVariable<?> arg = genericArguments[i];
+                result += getName(arg);
+                Type[] bounds = arg.getBounds();
+                if (bounds.length > 0 && !bounds[0].equals(Object.class)) {
+                    result += " extends ";
+                    for (int j = 0; j < bounds.length; j++) {
+                        result += toStringGenericTypedClass(bounds[j], importedClasses);
+                        if (j != bounds.length - 1) {
+                            result += " & ";
+                        }
+                    }
+                }
+                if (i != genericArguments.length - 1) {
+                    result += ", ";
+                } else {
+                    result += ">";
+                }
+            }
+        }
+        return result;
+    }
+
+    private String generateGenericParamsSuffix(TypeVariable<?>[] genericArguments) {
+        String result = "";
+        if (genericArguments.length != 0) {
+            result = "<";
+            for (int i = 0; i < genericArguments.length; i++) {
+                TypeVariable<?> arg = genericArguments[i];
+                result += getName(arg);
+                if (i != genericArguments.length - 1) {
+                    result += ", ";
+                } else {
+                    result += ">";
+                }
+            }
+        }
+        return result;
+    }
+
+    private String getSimpleName(Class<?> clazz, Map<String, Class<?>> importedClasses) {
+        if (importedClasses.containsKey(clazz.getSimpleName())
+                && !importedClasses.get(clazz.getSimpleName()).equals(clazz)) {
+            return clazz.getCanonicalName();
+        } else {
+            return clazz.getSimpleName();
+        }
+    }
+
+    private String getName(TypeVariable<?> arg) {
+        return arg.getName(); //TODO: use translations!
     }
 
 }

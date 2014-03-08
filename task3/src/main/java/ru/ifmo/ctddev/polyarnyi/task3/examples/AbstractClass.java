@@ -1,17 +1,27 @@
 package ru.ifmo.ctddev.polyarnyi.task3.examples;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 /**
  * Date: 08.03.14 at 13:31
  *
  * @author Nickolay Polyarniy aka PolarNick
  */
-public abstract class AbstractClass {
+public abstract class AbstractClass <E, B extends List<C>, C, D> implements List<E> {
 
-    public AbstractClass(int value) {
-
+    public AbstractClass(int value, E[] array) {
     }
 
-    public abstract int getInt();
+    public abstract D getD();
+
+    public <T extends Comparable<Map<Integer[], T>> & Set<T> & Comparator<E>> List<T> getA(T arg1, Set<? super Integer> arg2) {
+        return null;
+    }
+
+    public abstract int getInt(java.awt.List a);
     abstract Object getA();
 
     @Override

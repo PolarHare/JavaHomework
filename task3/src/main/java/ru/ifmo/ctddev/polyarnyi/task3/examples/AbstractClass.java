@@ -21,6 +21,8 @@ public abstract class AbstractClass <E, B extends List<C>, C, D> implements List
         return null;
     }
 
+    public abstract <D> D getABC();
+
     public abstract int getInt(java.awt.List a);
     abstract Object getA();
 

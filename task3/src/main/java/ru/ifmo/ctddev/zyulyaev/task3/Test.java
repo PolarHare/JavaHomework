@@ -7,7 +7,7 @@ import java.util.List;
  * Created by seidhe on 07/03/14.
  */
 public abstract class Test<E extends Comparable<? super Collection<? extends E>>, EX extends Exception>
-        extends SuperTest
+        extends SuperTest<E>
         implements I1<Double>, I2<Collection<? extends E>> {
     <T extends E> Test(T t) throws IllegalArgumentException, EX {
     }
@@ -17,4 +17,6 @@ public abstract class Test<E extends Comparable<? super Collection<? extends E>>
 
     public abstract <E extends Collection<?>> void test2(E e);
     public abstract void test2(E e);
+
+    public abstract void test3(E e);
 }
